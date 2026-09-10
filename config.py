@@ -1,95 +1,102 @@
-# ====================== CONFIG ======================
-# MODE: "PAPER" (safe, recommended) or "LIVE"
-MODE = "LIVE"
+# ============================================================
+# VeteranSR-Agent - Complete Config
+# Easy Switch between SPOT and PERPETUAL
+# ============================================================
 
-# Crypto.com Exchange API (only needed for LIVE)
-API_KEY = 'xxxxxxxxxxxxxxxxxxxxxx'
-API_SECRET = 'xxxxxxxxxxxxxxxxxxxxxx'
-# API_KEY = 'htd1ZMNGVU79K3e3Usu2eh'
-# API_SECRET = 'PLNf7NrJNpRSaXyJEhXY2o'
+# ====================== TRADING MODE ======================
+# Change only this line:
+# "SPOT"  = Spot trading (safer, recommended for beginners)
+# "PERP"  = Perpetual contracts (higher risk)
 
-# Starting capital simulation
+TRADING_MODE = "SPOT"                  # <-- CHANGE THIS TO "PERP" WHEN NEEDED
+
+# ====================== MODE ======================
+# "PAPER" = Safe simulation (recommended)
+# "LIVE"  = Real money
+
+MODE = "PAPER"
+
+# ====================== API KEYS ======================
+API_KEY = "YOUR_API_KEY_HERE"
+API_SECRET = "YOUR_API_SECRET_HERE"
+
+# ====================== CAPITAL ======================
 STARTING_EQUITY = 50.0
 
-# ====================== RISK MANAGEMENT ======================
-# Strong risk controls kept (only very mild relaxation)
-RISK_PER_TRADE = 0.007  # 0.7% (was 0.6%) – still conservative
-MAX_OPEN_POSITIONS = 1
-MAX_PORTFOLIO_HEAT = 0.48  # slight increase from 0.45
-DAILY_LOSS_LIMIT = 0.025  # 2.5% kept (strong daily protection)
-WEEKLY_LOSS_LIMIT = 0.055
-MAX_DRAWDOWN = 0.12
+# ====================== AUTO SETTINGS BY MODE ======================
+if TRADING_MODE == "SPOT":
+    PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+    DEFAULT_TYPE = "spot"
+    LEVERAGE = 1
+    RISK_PER_TRADE = 0.004              # 0.4%
+    MAX_PORTFOLIO_HEAT = 0.35
+    DAILY_LOSS_LIMIT = 0.020            # 2.0%
+    MAX_DRAWDOWN = 0.08
+    MIN_QUALITY_SCORE = 78
+else:
+    # PERPETUAL MODE
+    PAIRS = ["CROUSD-PERP", "EGLDUSD-PERP"]
+    DEFAULT_TYPE = "swap"
+    LEVERAGE = 1                        # Keep 1x for safety
+    RISK_PER_TRADE = 0.003              # 0.3% (stricter)
+    MAX_PORTFOLIO_HEAT = 0.25
+    DAILY_LOSS_LIMIT = 0.015            # 1.5%
+    MAX_DRAWDOWN = 0.06
+    MIN_QUALITY_SCORE = 80
+
+# ====================== COMMON RISK SETTINGS ======================
+MAX_OPEN_POSITIONS = 1                  # Very important - only 1 position at a time
+WEEKLY_LOSS_LIMIT = 0.04
 CONSECUTIVE_LOSS_PAUSE = 2
-TRADE_COOLDOWN_MINUTES = 15
-CONSECUTIVE_LOSS_COOLDOWN_MINUTES = 60
-# Crypto trades 24/7.
-# Trading day resets at 00:00 UTC.
-TRADING_DAY_RESET_HOUR_UTC = 0
+MARGIN_MODE = "isolated"
 
-# ====================== TRADE LIFECYCLE ======================
-# Only one position may exist at a time.
-# New trade scanning starts only after the previous position is closed.
-SINGLE_POSITION_MODE = True
-
-# When an order is rejected because available balance is insufficient,
-# stop trying to place another order until the next valid trading state.
-STOP_ON_INSUFFICIENT_BALANCE = True
-
-
-# ====================== TRADING PAIRS (Crypto.com format) ======================
-PAIRS = ["CRO/USDT", "EGLD/USDT"]
-# PAIRS = ["CRO/USDT", "SOL/USDT", "EGLD/USDT"]
-# PAIRS = ["SPCXUSD-PERP"]
-
-# Timeframes
+# ====================== TIMEFRAMES ======================
 SIGNAL_TIMEFRAME = "1h"
 HIGHER_TIMEFRAME = "1d"
 
 # ====================== STRATEGY PARAMETERS ======================
-# More trades while keeping quality
-MIN_QUALITY_SCORE = 78  # lowered from 72 → more setups
-MIN_RR = 1.8  # lowered from 1.6 → more valid R:R opportunities
+MIN_RR = 1.7
 ATR_PERIOD = 14
 RSI_PERIOD = 14
 EMA_FAST = 20
 EMA_SLOW = 50
 
-# Fees (Crypto.com approximate base rates)
+# ====================== FEES & SLIPPAGE ======================
 MAKER_FEE = 0.0025
 TAKER_FEE = 0.0050
-SLIPPAGE = 0.0008
+SLIPPAGE = 0.0010
 
-# Loop settings
-LOOP_SLEEP_SECONDS = 45
+# ====================== LOOP ======================
+LOOP_SLEEP_SECONDS = 30
 
 # ====================== INTELLIGENT FILTERS ======================
 ENABLE_SESSION_FILTER = True
-# High volume sessions (UTC)
 SESSION_START_UTC = 7
 SESSION_END_UTC = 21
 
 ENABLE_VOLATILITY_PROTECTION = True
-MAX_ATR_MULTIPLIER = 2.3  # relaxed from 2.1 → allows a bit more volatility
+MAX_ATR_MULTIPLIER = 2.0
 
 ENABLE_NEWS_PROTECTION = True
-AVOID_FIRST_MINUTES = 20  # slightly less restrictive (was 25)
+AVOID_FIRST_MINUTES = 25
 
-# ====================== ADVANCED RISK & PROFIT ======================
+# ====================== ADVANCED FEATURES ======================
 ENABLE_ADAPTIVE_SIZING = True
 ENABLE_PARTIAL_TP = True
 ENABLE_DYNAMIC_SCORE = True
 
-# Adaptive sizing – starts a bit earlier so more trades get reasonable size
-FULL_SIZE_SCORE = 85  # was 88
-MEDIUM_SIZE_SCORE = 75  # was 78
-MEDIUM_SIZE_MULTIPLIER = 0.65  # slightly higher than 0.60
+FULL_SIZE_SCORE = 88
+MEDIUM_SIZE_SCORE = 78
+MEDIUM_SIZE_MULTIPLIER = 0.60
 
-# Partial Take Profit
-PARTIAL_TP1_R = 1.4  # slightly earlier first partial
-PARTIAL_TP2_R = 2.4
+PARTIAL_TP1_R = 1.5
+PARTIAL_TP2_R = 2.5
 
-# Dynamic Score (Win-rate based)
-RECENT_TRADES_WINDOW = 12
-MIN_WINRATE_TO_LOWER = 0.53  # slightly more forgiving
-LOW_WINRATE_THRESHOLD = 0.40
-DYNAMIC_SCORE_BOOST = 5  # milder boost than 6
+RECENT_TRADES_WINDOW = 10
+LOW_WINRATE_THRESHOLD = 0.42
+DYNAMIC_SCORE_BOOST = 6
+
+# ====================== TELEGRAM (Optional) ======================
+ENABLE_TELEGRAM = False
+TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"
