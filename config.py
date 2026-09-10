@@ -100,3 +100,25 @@ DYNAMIC_SCORE_BOOST = 6
 ENABLE_TELEGRAM = False
 TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"
+
+# ====================== NEWS FILTER ======================
+ENABLE_NEWS_FILTER = True
+
+# How many recent news items to check
+NEWS_LOOKBACK_HOURS = 12
+
+# Keywords (you can expand later)
+POSITIVE_KEYWORDS = [
+    "partnership", "adoption", "listing", "upgrade", "mainnet", 
+    "bullish", "surge", "rally", "approval", "integration", "funding"
+]
+
+NEGATIVE_KEYWORDS = [
+    "hack", "exploit", "sec", "lawsuit", "ban", "delist", "investigation",
+    "crash", "dump", "bearish", "scam", "rug", "outage", "penalty", "fine"
+]
+
+# Score adjustment
+NEWS_POSITIVE_BOOST = 6
+NEWS_NEGATIVE_PENALTY = 10
+NEWS_STRONG_NEGATIVE_BLOCK = True   # Block trade on strong negative news
