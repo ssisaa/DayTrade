@@ -262,4 +262,7 @@ def run_agent():
             time.sleep(60)
 
 if __name__ == "__main__":
+    print(f"Trading Mode     : {TRADING_MODE}")
+    print(f"Pairs            : {PAIRS}")
+    print(f"Default Type     : {DEFAULT_TYPE}")
     run_agent()
