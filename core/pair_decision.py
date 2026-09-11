@@ -1,84 +1,105 @@
+# core/pair_decision.py
 import ccxt
 from core.news_filter import get_news_decision
 from config import (
-    ALLOWED_SPOT_PAIRS, ALLOWED_PERP_PAIRS,
-    TRADING_MODE, MAX_PAIRS_TO_SCAN, MODE
+    ALLOWED_SPOT_PAIRS,
+    ALLOWED_PERP_PAIRS,
+    TRADING_MODE,
+    MAX_PAIRS_TO_SCAN
 )
 from utils.logger import logger
 from data.data_feed import DataFeed
 
+
 def get_24h_change(exchange, pair):
-    """Get simple 24h price change percentage"""
+    """Get 24h percentage change"""
     try:
         ticker = exchange.fetch_ticker(pair)
-        percentage = ticker.get('percentage')
+        percentage = ticker.get("percentage")
+
         if percentage is None:
-            # fallback calculation
-            last = ticker.get('last')
-            open_ = ticker.get('open')
+            last = ticker.get("last")
+            open_ = ticker.get("open")
             if last and open_ and open_ != 0:
                 percentage = ((last - open_) / open_) * 100
             else:
-                percentage = 0
+                percentage = 0.0
+
         return float(percentage)
     except Exception as e:
         logger.warning(f"Could not get 24h change for {pair}: {e}")
         return 0.0
 
+
 def decide_best_pairs():
     """
-    Intelligent pair selection for daily trading.
-    Called only when there is no open position.
+    Daily Trader Decision Engine
+    - Looks at major pairs
+    - Also allows temporarily strong weaker pairs
+    - Ranks them intelligently
+    - Returns only the best 1–2 pairs
     """
-    logger.info("Re-evaluating best pairs (expanded universe)...")
+
+    logger.info("Running intelligent pair decision engine...")
 
     feed = DataFeed()
     exchange = feed.exchange
 
-    universe = ALLOWED_SPOT_PAIRS if TRADING_MODE == "SPOT" else ALLOWED_PERP_PAIRS
+    if TRADING_MODE == "SPOT":
+        universe = ALLOWED_SPOT_PAIRS
+    else:
+        universe = ALLOWED_PERP_PAIRS
+
     candidates = []
 
     for pair in universe:
         try:
-            # 1. News analysis
+            # -------- News Check --------
             news = get_news_decision(pair)
-            
+
+            # Hard block on dangerous news
             if news["should_block"]:
-                print(f"  {pair} -> Blocked by strong negative news")
+                print(f"  {pair} -> BLOCKED (strong negative news)")
                 continue
 
-            # 2. Base score
-            score = 50
+            score = 50  # base score
 
-            # News adjustment
+            # News scoring
             if news["sentiment"] == "POSITIVE":
                 score += 18
             elif news["sentiment"] == "NEGATIVE":
                 score -= 14
-            elif news["sentiment"] == "NEUTRAL":
-                score += 2
+            else:
+                score += 2   # neutral
 
-            # 3. Relative Strength (24h performance)
+            # -------- Relative Strength --------
             change_24h = get_24h_change(exchange, pair)
 
-            # Prefer pairs that are not crashing hard, 
-            # but also not extremely extended
+            # Healthy movement
             if -3.5 <= change_24h <= 6.0:
-                score += 12          # Healthy range
-            elif change_24h > 8.0:
-                score -= 8           # Already extended (risky for new long)
-            elif change_24h < -6.0:
-                score -= 10          # Heavy dumping
+                score += 12
 
-            # Small bonus for mild relative strength
+            # Mild strength bonus
             if 1.0 <= change_24h <= 4.5:
-                score += 6
-
-            # 4. Liquidity preference (simple)
-            major_pairs = ["BTC/USDT", "ETH/USDT", "SOL/USDT", 
-                           "BTCUSD-PERP", "ETHUSD-PERP", "SOLUSD-PERP"]
-            if pair in major_pairs:
                 score += 8
+
+            # Overextended (already pumped)
+            if change_24h > 8.0:
+                score -= 10
+
+            # Heavy dump
+            if change_24h < -6.0:
+                score -= 12
+
+            # Major pair liquidity bonus
+            if pair in ["BTC/USDT", "ETH/USDT", "SOL/USDT",
+                        "BTCUSD-PERP", "ETHUSD-PERP", "SOLUSD-PERP"]:
+                score += 8
+
+            # Mild bonus for mid-cap pairs that are suddenly strong
+            mid_cap_pairs = ["CRO/USDT", "EGLD/USDT", "SUI/USDT", "ARB/USDT", "NEAR/USDT"]
+            if pair in mid_cap_pairs and change_24h > 2.0 and news["sentiment"] != "NEGATIVE":
+                score += 10   # temporary strength bonus
 
             candidates.append({
                 "pair": pair,
@@ -92,28 +113,25 @@ def decide_best_pairs():
             logger.warning(f"Error evaluating {pair}: {e}")
             continue
 
-    # Sort by score (best first)
+    # Sort best to worst
     candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)
 
-    # Only keep decent candidates
-    selected = [c for c in candidates if c["score"] >= 48][:MAX_PAIRS_TO_SCAN]
+    # Select top pairs
+    selected = [c for c in candidates if c["score"] >= 50][:MAX_PAIRS_TO_SCAN]
 
-    print("\n" + "="*60)
-    print("PAIR DECISION ENGINE")
-    print("="*60)
+    print("\n" + "="*65)
+    print("DAILY TRADER PAIR DECISION")
+    print("="*65)
 
     if not selected:
-        print("No suitable pairs found. Staying in cash.")
-        print("="*60 + "\n")
+        print("No good pairs found. Staying in cash this cycle.")
+        print("="*65 + "\n")
         return []
 
     for i, c in enumerate(selected, 1):
-        print(f"{i}. {c['pair']:<15} | Score: {c['score']:<5} | "
-              f"24h: {c['change_24h']:>6}% | News: {c['news']}")
+        print(f"{i}. {c['pair']:<15} | Score: {c['score']:<5} | 24h: {c['change_24h']:>6}% | News: {c['news']}")
 
-    print("="*60 + "\n")
+    print("="*65 + "\n")
 
     chosen_pairs = [c["pair"] for c in selected]
-    logger.info(f"Selected pairs: {chosen_pairs}")
-    
     return chosen_pairs
