@@ -154,11 +154,12 @@ def run_agent():
                 continue
 
             # ============================================================
-            # 4. NO OPEN POSITION → FRESH PAIR DECISION
+            # 4. NO OPEN POSITION → FRESH PAIR DECISION + SCANNING
             # ============================================================
             print("-> No open position. Running fresh pair decision engine...")
 
             try:
+                from core.pair_decision import decide_best_pairs
                 selected_pairs = decide_best_pairs()
             except Exception as e:
                 print(f"-> Pair decision error: {e}")
@@ -205,6 +206,7 @@ def run_agent():
                     setups = find_setups(df_1h, df_4h, regime, pair)
                 except Exception as e:
                     print(f"   Setup scanner error: {e}")
+                    import traceback
                     traceback.print_exc()
                     continue
 
@@ -217,9 +219,9 @@ def run_agent():
 
                 # Dynamic score check
                 try:
-                    current_min = performance.get_dynamic_min_score(MIN_QUALITY_SCORE)
-                    if best["score"] < current_min:
-                        print(f"   Rejected (Score {best['score']} < dynamic min {current_min})")
+                    current_min_score = performance.get_dynamic_min_score(MIN_QUALITY_SCORE)
+                    if best["score"] < current_min_score:
+                        print(f"   Rejected (Score {best['score']} < dynamic min {current_min_score})")
                         continue
                 except Exception as e:
                     print(f"   Dynamic score check error: {e}")
