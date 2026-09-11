@@ -8,34 +8,7 @@
 # "SPOT"  = Spot trading (safer, recommended for beginners)
 # "PERP"  = Perpetual contracts (higher risk)
 
-# ====================== DYNAMIC PAIR DECISION ======================
-# The bot will decide pairs automatically.
-# These are only the allowed universe (high liquidity only)
-
-# ====================== DYNAMIC PAIR UNIVERSE ======================
-# High liquidity + reasonable pairs on Crypto.com (Spot)
-ALLOWED_SPOT_PAIRS = [
-    "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT",
-    "ADA/USDT", "AVAX/USDT", "DOT/USDT", "LINK/USDT",
-    "DOGE/USDT", "LTC/USDT", "ATOM/USDT", "NEAR/USDT",
-    "APT/USDT", "SUI/USDT", "ARB/USDT", "OP/USDT",
-    "CRO/USDT", "EGLD/USDT"
-]
-
-# Perpetual major pairs (only the more liquid ones)
-ALLOWED_PERP_PAIRS = [
-    "BTCUSD-PERP", "ETHUSD-PERP", "SOLUSD-PERP",
-    "XRPUSD-PERP", "ADAUSD-PERP", "AVAXUSD-PERP"
-]
-
-# Current preferred mode (can still be overridden by the decision engine)
-TRADING_MODE = "SPOT"
-
-# Force the bot to re-decide pairs every time there is no open position
-DYNAMIC_PAIR_SELECTION = True
-
-# Maximum pairs to scan after decision (keep low for quality)
-MAX_PAIRS_TO_SCAN = 2
+TRADING_MODE = "SPOT"                  # <-- CHANGE THIS TO "PERP" WHEN NEEDED
 
 # ====================== MODE ======================
 # "PAPER" = Safe simulation (recommended)
@@ -50,9 +23,31 @@ API_SECRET = "YOUR_API_SECRET_HERE"
 # ====================== CAPITAL ======================
 STARTING_EQUITY = 50.0
 
+# ====================== DYNAMIC PAIR UNIVERSE ======================
+# High liquidity + reasonable pairs on Crypto.com
+
+ALLOWED_SPOT_PAIRS = [
+    "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT",
+    "ADA/USDT", "AVAX/USDT", "DOT/USDT", "LINK/USDT",
+    "DOGE/USDT", "LTC/USDT", "ATOM/USDT", "NEAR/USDT",
+    "APT/USDT", "SUI/USDT", "ARB/USDT", "OP/USDT",
+    "CRO/USDT", "EGLD/USDT"
+]
+
+ALLOWED_PERP_PAIRS = [
+    "BTCUSD-PERP", "ETHUSD-PERP", "SOLUSD-PERP",
+    "XRPUSD-PERP", "ADAUSD-PERP", "AVAXUSD-PERP"
+]
+
+# Force the bot to re-decide pairs every time there is no open position
+DYNAMIC_PAIR_SELECTION = True
+
+# Maximum pairs to scan after decision (keep low for quality)
+MAX_PAIRS_TO_SCAN = 2
+
 # ====================== AUTO SETTINGS BY MODE ======================
 if TRADING_MODE == "SPOT":
-    PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+    PAIRS = ALLOWED_SPOT_PAIRS
     DEFAULT_TYPE = "spot"
     LEVERAGE = 1
     RISK_PER_TRADE = 0.004              # 0.4%
@@ -62,7 +57,7 @@ if TRADING_MODE == "SPOT":
     MIN_QUALITY_SCORE = 78
 else:
     # PERPETUAL MODE
-    PAIRS = ["CROUSD-PERP", "EGLDUSD-PERP"]
+    PAIRS = ALLOWED_PERP_PAIRS
     DEFAULT_TYPE = "swap"
     LEVERAGE = 1                        # Keep 1x for safety
     RISK_PER_TRADE = 0.003              # 0.3% (stricter)
@@ -107,6 +102,28 @@ MAX_ATR_MULTIPLIER = 2.0
 ENABLE_NEWS_PROTECTION = True
 AVOID_FIRST_MINUTES = 25
 
+# ====================== NEWS FILTER ======================
+ENABLE_NEWS_FILTER = True
+
+# How many recent news items to check
+NEWS_LOOKBACK_HOURS = 12
+
+# Keywords
+POSITIVE_KEYWORDS = [
+    "partnership", "adoption", "listing", "upgrade", "mainnet",
+    "bullish", "surge", "rally", "approval", "integration", "funding"
+]
+
+NEGATIVE_KEYWORDS = [
+    "hack", "exploit", "sec", "lawsuit", "ban", "delist", "investigation",
+    "crash", "dump", "bearish", "scam", "rug", "outage", "penalty", "fine"
+]
+
+# Score adjustment
+NEWS_POSITIVE_BOOST = 6
+NEWS_NEGATIVE_PENALTY = 10
+NEWS_STRONG_NEGATIVE_BLOCK = True   # Block trade on strong negative news
+
 # ====================== ADVANCED FEATURES ======================
 ENABLE_ADAPTIVE_SIZING = True
 ENABLE_PARTIAL_TP = True
@@ -127,25 +144,3 @@ DYNAMIC_SCORE_BOOST = 6
 ENABLE_TELEGRAM = False
 TELEGRAM_BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 TELEGRAM_CHAT_ID = "YOUR_CHAT_ID_HERE"
-
-# ====================== NEWS FILTER ======================
-ENABLE_NEWS_FILTER = True
-
-# How many recent news items to check
-NEWS_LOOKBACK_HOURS = 12
-
-# Keywords (you can expand later)
-POSITIVE_KEYWORDS = [
-    "partnership", "adoption", "listing", "upgrade", "mainnet", 
-    "bullish", "surge", "rally", "approval", "integration", "funding"
-]
-
-NEGATIVE_KEYWORDS = [
-    "hack", "exploit", "sec", "lawsuit", "ban", "delist", "investigation",
-    "crash", "dump", "bearish", "scam", "rug", "outage", "penalty", "fine"
-]
-
-# Score adjustment
-NEWS_POSITIVE_BOOST = 6
-NEWS_NEGATIVE_PENALTY = 10
-NEWS_STRONG_NEGATIVE_BLOCK = True   # Block trade on strong negative news
