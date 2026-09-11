@@ -8,7 +8,34 @@
 # "SPOT"  = Spot trading (safer, recommended for beginners)
 # "PERP"  = Perpetual contracts (higher risk)
 
-TRADING_MODE = "SPOT"                  # <-- CHANGE THIS TO "PERP" WHEN NEEDED
+# ====================== DYNAMIC PAIR DECISION ======================
+# The bot will decide pairs automatically.
+# These are only the allowed universe (high liquidity only)
+
+# ====================== DYNAMIC PAIR UNIVERSE ======================
+# High liquidity + reasonable pairs on Crypto.com (Spot)
+ALLOWED_SPOT_PAIRS = [
+    "BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT",
+    "ADA/USDT", "AVAX/USDT", "DOT/USDT", "LINK/USDT",
+    "DOGE/USDT", "LTC/USDT", "ATOM/USDT", "NEAR/USDT",
+    "APT/USDT", "SUI/USDT", "ARB/USDT", "OP/USDT",
+    "CRO/USDT", "EGLD/USDT"
+]
+
+# Perpetual major pairs (only the more liquid ones)
+ALLOWED_PERP_PAIRS = [
+    "BTCUSD-PERP", "ETHUSD-PERP", "SOLUSD-PERP",
+    "XRPUSD-PERP", "ADAUSD-PERP", "AVAXUSD-PERP"
+]
+
+# Current preferred mode (can still be overridden by the decision engine)
+TRADING_MODE = "SPOT"
+
+# Force the bot to re-decide pairs every time there is no open position
+DYNAMIC_PAIR_SELECTION = True
+
+# Maximum pairs to scan after decision (keep low for quality)
+MAX_PAIRS_TO_SCAN = 2
 
 # ====================== MODE ======================
 # "PAPER" = Safe simulation (recommended)
