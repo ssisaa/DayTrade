@@ -1,6 +1,7 @@
 # core/setup_scanner.py
 from core.indicators import add_indicators
 from core.smart_filters import passes_all_smart_filters
+from core.news_filter import get_news_decision
 from utils.setup_logger import setup_logger
 from config import *
 import numpy as np
@@ -35,7 +36,7 @@ def find_setups(df_1h, df_4h, regime, pair):
     # 1. Smart Filters first
     allowed, reason = passes_all_smart_filters(df_1h)
     if not allowed:
-        print(f"    → Filtered out: {reason}")
+        print(f"    -> Filtered out: {reason}")
         return []
 
     if df_1h is None or len(df_1h) < 70:
@@ -58,283 +59,136 @@ def find_setups(df_1h, df_4h, regime, pair):
     if regime in ["BULL", "STRONG_BULL", "RANGE"] and htf_bias != "BEARISH":
         distance = abs(last['close'] - support) / last['close']
 
-        # -----------------------------------------------------
-        # LONG ENTRY CONDITIONS
-        # -----------------------------------------------------
         long_rsi_pass = last['rsi'] < 36
         long_distance_pass = distance < 0.0065
+
         if long_distance_pass and long_rsi_pass:
 
-            # =================================================
-            # SCORE CALCULATION
-            # =================================================
+            # ========== SCORE CALCULATION ==========
             score = 40
             score_reasons = []
 
-            # -------------------------------------------------
-            # Candle rejection
-            # -------------------------------------------------
             candle_rejection = (
-                    last['close'] > last['open']
-                    and
-                    (last['high'] - last['close'])
-                    <
-                    (last['close'] - last['low']) * 0.6
+                last['close'] > last['open'] and
+                (last['high'] - last['close']) < (last['close'] - last['low']) * 0.6
             )
-
             if candle_rejection:
                 score += 18
-                score_reasons.append(
-                    "CandleRejection +18"
-                )
+                score_reasons.append("CandleRejection +18")
 
-            # -------------------------------------------------
-            # Volume confirmation
-            # -------------------------------------------------
-            volume_confirmation = (
-                    last['volume'] >
-                    last['volume_ma'] * 1.3
-            )
-
+            volume_confirmation = last['volume'] > last['volume_ma'] * 1.3
             if volume_confirmation:
                 score += 15
-                score_reasons.append(
-                    "Volume +15"
-                )
+                score_reasons.append("Volume +15")
 
-            # -------------------------------------------------
-            # Higher timeframe confirmation
-            # -------------------------------------------------
             if htf_bias == "BULLISH":
-
                 score += 16
-                score_reasons.append(
-                    "HTF Bullish +16"
-                )
+                score_reasons.append("HTF Bullish +16")
             elif htf_bias == "NEUTRAL":
-
                 score += 5
-                score_reasons.append(
-                    "HTF Neutral +5"
-                )
+                score_reasons.append("HTF Neutral +5")
 
-            # -------------------------------------------------
-            # Regime strength
-            # -------------------------------------------------
             if regime == "STRONG_BULL":
                 score += 14
-                score_reasons.append(
-                    "Strong Bull +14"
-                )
+                score_reasons.append("Strong Bull +14")
             elif regime == "BULL":
-
                 score += 9
-                score_reasons.append(
-                    "Bull +9"
-                )
+                score_reasons.append("Bull +9")
 
-            # -------------------------------------------------
-            # Distance to support
-            # -------------------------------------------------
             if distance < 0.003:
                 score += 10
-                score_reasons.append(
-                    "Near Support +10"
-                )
+                score_reasons.append("Near Support +10")
 
-            # -------------------------------------------------
-            # RSI extreme
-            # -------------------------------------------------
             if last['rsi'] < 30:
                 score += 8
-                score_reasons.append(
-                    "RSI Extreme +8"
-                )
+                score_reasons.append("RSI Extreme +8")
 
-            # =================================================
-            # LONG RISK / REWARD
-            # =================================================
-            entry = float(last['close'])
-            # Stop must be BELOW entry
-            stop = float(
-                support - atr * 0.8
-            )
-            # Risk distance
-            risk = entry - stop
+            # ========== NEWS FILTER ==========
+            news = get_news_decision(pair)
+            print(f"    -> News: {news['sentiment']} | {news['reason']}")
 
-            # -------------------------------------------------
-            # Validate LONG stop
-            # -------------------------------------------------
-            if risk <= 0:
-                status = "REJECTED"
-                reason = (
-                    f"Invalid LONG risk | "
-                    f"Entry={entry:.6f} | "
-                    f"Stop={stop:.6f} | "
-                    f"Risk={risk:.6f}"
-                )
-                print(
-                    f"    [LONG REJECTED] "
-                    f"{reason}"
-                )
+            if news["should_block"]:
+                print(f"    -> LONG blocked by strong negative news")
                 setup_logger.log_setup(
-                    pair=pair,
-                    side="buy",
-                    status=status,
-                    score=score,
-                    rsi=last['rsi'],
-                    distance=distance,
-                    net_rr=0.0,
-                    htf_bias=htf_bias,
-                    regime=regime,
-                    entry=entry,
-                    stop=stop,
-                    target=entry,
-                    reason=reason
+                    pair=pair, side="buy", status="REJECTED",
+                    score=score, rsi=last['rsi'], distance=distance,
+                    net_rr=0.0, htf_bias=htf_bias, regime=regime,
+                    entry=last['close'], stop=0, target=0,
+                    reason=f"Blocked by news: {news['reason']}"
                 )
             else:
-                # -------------------------------------------------
-                # LONG target
-                # -------------------------------------------------
-                reward = risk * 2.5
-                target = entry + reward
+                # Apply news score adjustment
+                score += news.get("score_adjustment", 0)
+                if news.get("score_adjustment", 0) != 0:
+                    score_reasons.append(f"News {news['score_adjustment']:+d}")
 
-                # -------------------------------------------------
-                # Fees + slippage
-                # -------------------------------------------------
-                cost = (
-                        MAKER_FEE
-                        +
-                        TAKER_FEE
-                        +
-                        SLIPPAGE * 2
-                )
-                gross_rr = reward / risk
-                net_rr = (
-                        gross_rr -
-                        (cost * 6)
-                )
+                # ========== RISK / REWARD ==========
+                entry = float(last['close'])
+                stop = float(support - atr * 0.8)
+                risk = entry - stop
 
-                # =================================================
-                # DEBUG LOG
-                # =================================================
-                print(
-                    f"    [LONG DEBUG] "
-                    f"Score: {score} | "
-                    f"RSI: {last['rsi']:.1f} | "
-                    f"Distance: {distance * 100:.2f}% | "
-                    f"HTF: {htf_bias} | "
-                    f"Risk: {risk:.6f} | "
-                    f"Gross RR: {gross_rr:.2f} | "
-                    f"Net RR: {net_rr:.2f}"
-                )
-                print(
-                    f"    [LONG SCORE] "
-                    f"{', '.join(score_reasons) if score_reasons else 'Base Score 40'} "
-                    f"| Total={score}"
-                )
-
-                # =================================================
-                # FINAL FILTER CHECKS
-                # =================================================
-                score_pass = (
-                        score >= MIN_QUALITY_SCORE
-                )
-                rr_pass = (
-                        net_rr >= MIN_RR
-                )
-                risk_pass = (
-                        risk > 0
-                )
-
-                # =================================================
-                # ACCEPT / REJECT
-                # =================================================
-                if score_pass and rr_pass and risk_pass:
-                    status = "ACCEPTED"
-                    reason = (
-                        "Passed all quality and risk filters"
-                    )
-                    setups.append({
-                        "pair": pair,
-                        "side": "buy",
-                        "entry": round(entry, 4),
-                        "stop": round(stop, 4),
-                        "target": round(target, 4),
-                        "score": score,
-                        "rr": round(net_rr, 2),
-                        "htf_bias": htf_bias,
-                        "regime": regime
-                    })
-                    print(
-                        f"    ✓ [LONG ACCEPTED] "
-                        f"Score={score} >= {MIN_QUALITY_SCORE} | "
-                        f"Net RR={net_rr:.2f} >= {MIN_RR} | "
-                        f"Entry={entry:.6f} | "
-                        f"Stop={stop:.6f} | "
-                        f"Target={target:.6f}"
+                if risk <= 0:
+                    print(f"    [LONG REJECTED] Invalid risk | Entry={entry:.6f} | Stop={stop:.6f}")
+                    setup_logger.log_setup(
+                        pair=pair, side="buy", status="REJECTED",
+                        score=score, rsi=last['rsi'], distance=distance,
+                        net_rr=0.0, htf_bias=htf_bias, regime=regime,
+                        entry=entry, stop=stop, target=entry,
+                        reason="Invalid LONG risk"
                     )
                 else:
-                    status = "REJECTED"
-                    rejection_reasons = []
-                    if not score_pass:
-                        rejection_reasons.append(
-                            f"Score {score} < {MIN_QUALITY_SCORE}"
-                        )
-                    if not rr_pass:
-                        rejection_reasons.append(
-                            f"Net RR {net_rr:.2f} < {MIN_RR}"
-                        )
-                    if not risk_pass:
-                        rejection_reasons.append(
-                            "Risk <= 0"
-                        )
-                    reason = " | ".join(
-                        rejection_reasons
-                    )
-                    print(
-                        f"    ✗ [LONG REJECTED] "
-                        f"{reason}"
-                    )
+                    reward = risk * 2.5
+                    target = entry + reward
+                    cost = MAKER_FEE + TAKER_FEE + SLIPPAGE * 2
+                    gross_rr = reward / risk
+                    net_rr = gross_rr - (cost * 6)
 
-                # =================================================
-                # SAVE TO CSV
-                # =================================================
-                setup_logger.log_setup(
-                    pair=pair,
-                    side="buy",
-                    status=status,
-                    score=score,
-                    rsi=last['rsi'],
-                    distance=distance,
-                    net_rr=net_rr,
-                    htf_bias=htf_bias,
-                    regime=regime,
-                    entry=entry,
-                    stop=stop,
-                    target=target,
-                    reason=reason
-                )
+                    print(f"    [LONG DEBUG] Score: {score} | RSI: {last['rsi']:.1f} | "
+                          f"Distance: {distance*100:.2f}% | Net RR: {net_rr:.2f}")
+                    print(f"    [LONG SCORE] {', '.join(score_reasons)} | Total={score}")
+
+                    score_pass = score >= MIN_QUALITY_SCORE
+                    rr_pass = net_rr >= MIN_RR
+
+                    if score_pass and rr_pass:
+                        status = "ACCEPTED"
+                        reason = "Passed all quality, risk and news filters"
+                        setups.append({
+                            "pair": pair,
+                            "side": "buy",
+                            "entry": round(entry, 4),
+                            "stop": round(stop, 4),
+                            "target": round(target, 4),
+                            "score": score,
+                            "rr": round(net_rr, 2),
+                            "htf_bias": htf_bias,
+                            "regime": regime,
+                            "news_sentiment": news["sentiment"]
+                        })
+                        print(f"    [LONG ACCEPTED] Score={score} | Net RR={net_rr:.2f}")
+                    else:
+                        status = "REJECTED"
+                        rejection_reasons = []
+                        if not score_pass:
+                            rejection_reasons.append(f"Score {score} < {MIN_QUALITY_SCORE}")
+                        if not rr_pass:
+                            rejection_reasons.append(f"Net RR {net_rr:.2f} < {MIN_RR}")
+                        reason = " | ".join(rejection_reasons)
+                        print(f"    [LONG REJECTED] {reason}")
+
+                    setup_logger.log_setup(
+                        pair=pair, side="buy", status=status,
+                        score=score, rsi=last['rsi'], distance=distance,
+                        net_rr=net_rr, htf_bias=htf_bias, regime=regime,
+                        entry=entry, stop=stop, target=target, reason=reason
+                    )
         else:
-            # =================================================
-            # LONG ENTRY CONDITION REJECTION
-            # =================================================
             rejection_reasons = []
             if not long_distance_pass:
-                rejection_reasons.append(
-                    f"Distance {distance * 100:.2f}% >= 0.65%"
-                )
+                rejection_reasons.append(f"Distance {distance*100:.2f}% >= 0.65%")
             if not long_rsi_pass:
-                rejection_reasons.append(
-                    f"RSI {last['rsi']:.1f} >= 36"
-                )
-            reason = " | ".join(
-                rejection_reasons
-            )
-            print(
-                f"    [LONG FILTERED] "
-                f"{reason}"
-            )
+                rejection_reasons.append(f"RSI {last['rsi']:.1f} >= 36")
+            print(f"    [LONG FILTERED] {' | '.join(rejection_reasons)}")
 
     # =========================================================
     # SHORT SETUP
@@ -342,305 +196,142 @@ def find_setups(df_1h, df_4h, regime, pair):
     if regime in ["BEAR", "STRONG_BEAR", "RANGE"] and htf_bias != "BULLISH":
         distance = abs(last['close'] - resistance) / last['close']
 
-        # -----------------------------------------------------
-        # SHORT ENTRY CONDITIONS
-        # -----------------------------------------------------
         short_rsi_pass = last['rsi'] > 64
         short_distance_pass = distance < 0.0065
+
         if short_distance_pass and short_rsi_pass:
 
-            # =================================================
-            # SCORE CALCULATION
-            # =================================================
             score = 40
             score_reasons = []
 
-            # -------------------------------------------------
-            # Candle rejection
-            # -------------------------------------------------
             candle_rejection = (
-                    last['close'] < last['open']
-                    and
-                    (last['close'] - last['low'])
-                    <
-                    (last['high'] - last['close']) * 0.6
+                last['close'] < last['open'] and
+                (last['close'] - last['low']) < (last['high'] - last['close']) * 0.6
             )
             if candle_rejection:
                 score += 18
-                score_reasons.append(
-                    "CandleRejection +18"
-                )
+                score_reasons.append("CandleRejection +18")
 
-            # -------------------------------------------------
-            # Volume confirmation
-            # -------------------------------------------------
-            volume_confirmation = (
-                    last['volume'] >
-                    last['volume_ma'] * 1.3
-            )
+            volume_confirmation = last['volume'] > last['volume_ma'] * 1.3
             if volume_confirmation:
                 score += 15
+                score_reasons.append("Volume +15")
 
-                score_reasons.append(
-                    "Volume +15"
-                )
-
-            # -------------------------------------------------
-            # Higher timeframe confirmation
-            # -------------------------------------------------
             if htf_bias == "BEARISH":
                 score += 16
-                score_reasons.append(
-                    "HTF Bearish +16"
-                )
+                score_reasons.append("HTF Bearish +16")
             elif htf_bias == "NEUTRAL":
                 score += 5
-                score_reasons.append(
-                    "HTF Neutral +5"
-                )
+                score_reasons.append("HTF Neutral +5")
 
-            # -------------------------------------------------
-            # Regime strength
-            # -------------------------------------------------
             if regime == "STRONG_BEAR":
                 score += 14
-                score_reasons.append(
-                    "Strong Bear +14"
-                )
+                score_reasons.append("Strong Bear +14")
             elif regime == "BEAR":
                 score += 9
-                score_reasons.append(
-                    "Bear +9"
-                )
+                score_reasons.append("Bear +9")
 
-            # -------------------------------------------------
-            # Distance to resistance
-            # -------------------------------------------------
             if distance < 0.003:
                 score += 10
-                score_reasons.append(
-                    "Near Resistance +10"
-                )
+                score_reasons.append("Near Resistance +10")
 
-            # -------------------------------------------------
-            # RSI extreme
-            # -------------------------------------------------
             if last['rsi'] > 70:
                 score += 8
-                score_reasons.append(
-                    "RSI Extreme +8"
-                )
+                score_reasons.append("RSI Extreme +8")
 
-            # =================================================
-            # SHORT RISK / REWARD
-            # =================================================
-            entry = float(last['close'])
-            # IMPORTANT:
-            # SHORT stop must be ABOVE entry.
-            stop = float(
-                resistance + atr * 0.8
-            )
-            # Risk distance
-            risk = stop - entry
+            # ========== NEWS FILTER ==========
+            news = get_news_decision(pair)
+            print(f"    -> News: {news['sentiment']} | {news['reason']}")
 
-            # -------------------------------------------------
-            # Validate SHORT stop
-            # -------------------------------------------------
-            if risk <= 0:
-                status = "REJECTED"
-                reason = (
-                    f"Invalid SHORT risk | "
-                    f"Entry={entry:.6f} | "
-                    f"Stop={stop:.6f} | "
-                    f"Risk={risk:.6f}"
-                )
-                print(
-                    f"    [SHORT REJECTED] "
-                    f"{reason}"
-                )
+            if news["should_block"]:
+                print(f"    -> SHORT blocked by strong negative news")
                 setup_logger.log_setup(
-                    pair=pair,
-                    side="sell",
-                    status=status,
-                    score=score,
-                    rsi=last['rsi'],
-                    distance=distance,
-                    net_rr=0.0,
-                    htf_bias=htf_bias,
-                    regime=regime,
-                    entry=entry,
-                    stop=stop,
-                    target=entry,
-                    reason=reason
+                    pair=pair, side="sell", status="REJECTED",
+                    score=score, rsi=last['rsi'], distance=distance,
+                    net_rr=0.0, htf_bias=htf_bias, regime=regime,
+                    entry=last['close'], stop=0, target=0,
+                    reason=f"Blocked by news: {news['reason']}"
                 )
             else:
-                # -------------------------------------------------
-                # SHORT target
-                # -------------------------------------------------
-                reward = risk * 2.5
-                # IMPORTANT:
-                # SHORT target must be BELOW entry.
-                target = entry - reward
-                # -------------------------------------------------
-                # Fees + slippage
-                # -------------------------------------------------
-                cost = (
-                        MAKER_FEE
-                        +
-                        TAKER_FEE
-                        +
-                        SLIPPAGE * 2
-                )
-                gross_rr = reward / risk
-                net_rr = (
-                        gross_rr -
-                        (cost * 6)
-                )
+                score += news.get("score_adjustment", 0)
+                if news.get("score_adjustment", 0) != 0:
+                    score_reasons.append(f"News {news['score_adjustment']:+d}")
 
-                # =================================================
-                # DEBUG LOG
-                # =================================================
-                print(
-                    f"    [SHORT DEBUG] "
-                    f"Score: {score} | "
-                    f"RSI: {last['rsi']:.1f} | "
-                    f"Distance: {distance * 100:.2f}% | "
-                    f"HTF: {htf_bias} | "
-                    f"Risk: {risk:.6f} | "
-                    f"Gross RR: {gross_rr:.2f} | "
-                    f"Net RR: {net_rr:.2f}"
-                )
-                print(
-                    f"    [SHORT SCORE] "
-                    f"{', '.join(score_reasons) if score_reasons else 'Base Score 40'} "
-                    f"| Total={score}"
-                )
+                entry = float(last['close'])
+                stop = float(resistance + atr * 0.8)
+                risk = stop - entry
 
-                # =================================================
-                # FINAL FILTER CHECKS
-                # =================================================
-                score_pass = (
-                        score >= MIN_QUALITY_SCORE
-                )
-                rr_pass = (
-                        net_rr >= MIN_RR
-                )
-                risk_pass = (
-                        risk > 0
-                )
-
-                # =================================================
-                # ACCEPT / REJECT
-                # =================================================
-                if score_pass and rr_pass and risk_pass:
-
-                    status = "ACCEPTED"
-
-                    reason = (
-                        "Passed all quality and risk filters"
-                    )
-                    setups.append({
-                        "pair": pair,
-                        "side": "sell",
-                        "entry": round(entry, 4),
-                        "stop": round(stop, 4),
-                        "target": round(target, 4),
-                        "score": score,
-                        "rr": round(net_rr, 2),
-                        "htf_bias": htf_bias,
-                        "regime": regime
-                    })
-                    print(
-                        f"    ✓ [SHORT ACCEPTED] "
-                        f"Score={score} >= {MIN_QUALITY_SCORE} | "
-                        f"Net RR={net_rr:.2f} >= {MIN_RR} | "
-                        f"Entry={entry:.6f} | "
-                        f"Stop={stop:.6f} | "
-                        f"Target={target:.6f}"
+                if risk <= 0:
+                    print(f"    [SHORT REJECTED] Invalid risk | Entry={entry:.6f} | Stop={stop:.6f}")
+                    setup_logger.log_setup(
+                        pair=pair, side="sell", status="REJECTED",
+                        score=score, rsi=last['rsi'], distance=distance,
+                        net_rr=0.0, htf_bias=htf_bias, regime=regime,
+                        entry=entry, stop=stop, target=entry,
+                        reason="Invalid SHORT risk"
                     )
                 else:
-                    status = "REJECTED"
-                    rejection_reasons = []
-                    if not score_pass:
-                        rejection_reasons.append(
-                            f"Score {score} < {MIN_QUALITY_SCORE}"
-                        )
-                    if not rr_pass:
-                        rejection_reasons.append(
-                            f"Net RR {net_rr:.2f} < {MIN_RR}"
-                        )
-                    if not risk_pass:
-                        rejection_reasons.append(
-                            "Risk <= 0"
-                        )
-                    reason = " | ".join(
-                        rejection_reasons
-                    )
-                    print(
-                        f"    ✗ [SHORT REJECTED] "
-                        f"{reason}"
-                    )
+                    reward = risk * 2.5
+                    target = entry - reward
+                    cost = MAKER_FEE + TAKER_FEE + SLIPPAGE * 2
+                    gross_rr = reward / risk
+                    net_rr = gross_rr - (cost * 6)
 
-                # =================================================
-                # SAVE TO CSV
-                # =================================================
-                setup_logger.log_setup(
-                    pair=pair,
-                    side="sell",
-                    status=status,
-                    score=score,
-                    rsi=last['rsi'],
-                    distance=distance,
-                    net_rr=net_rr,
-                    htf_bias=htf_bias,
-                    regime=regime,
-                    entry=entry,
-                    stop=stop,
-                    target=target,
-                    reason=reason
-                )
+                    print(f"    [SHORT DEBUG] Score: {score} | RSI: {last['rsi']:.1f} | "
+                          f"Distance: {distance*100:.2f}% | Net RR: {net_rr:.2f}")
+                    print(f"    [SHORT SCORE] {', '.join(score_reasons)} | Total={score}")
+
+                    score_pass = score >= MIN_QUALITY_SCORE
+                    rr_pass = net_rr >= MIN_RR
+
+                    if score_pass and rr_pass:
+                        status = "ACCEPTED"
+                        reason = "Passed all quality, risk and news filters"
+                        setups.append({
+                            "pair": pair,
+                            "side": "sell",
+                            "entry": round(entry, 4),
+                            "stop": round(stop, 4),
+                            "target": round(target, 4),
+                            "score": score,
+                            "rr": round(net_rr, 2),
+                            "htf_bias": htf_bias,
+                            "regime": regime,
+                            "news_sentiment": news["sentiment"]
+                        })
+                        print(f"    [SHORT ACCEPTED] Score={score} | Net RR={net_rr:.2f}")
+                    else:
+                        status = "REJECTED"
+                        rejection_reasons = []
+                        if not score_pass:
+                            rejection_reasons.append(f"Score {score} < {MIN_QUALITY_SCORE}")
+                        if not rr_pass:
+                            rejection_reasons.append(f"Net RR {net_rr:.2f} < {MIN_RR}")
+                        reason = " | ".join(rejection_reasons)
+                        print(f"    [SHORT REJECTED] {reason}")
+
+                    setup_logger.log_setup(
+                        pair=pair, side="sell", status=status,
+                        score=score, rsi=last['rsi'], distance=distance,
+                        net_rr=net_rr, htf_bias=htf_bias, regime=regime,
+                        entry=entry, stop=stop, target=target, reason=reason
+                    )
         else:
-            # =================================================
-            # SHORT ENTRY CONDITION REJECTION
-            # =================================================
             rejection_reasons = []
             if not short_distance_pass:
-                rejection_reasons.append(
-                    f"Distance {distance * 100:.2f}% >= 0.65%"
-                )
+                rejection_reasons.append(f"Distance {distance*100:.2f}% >= 0.65%")
             if not short_rsi_pass:
-                rejection_reasons.append(
-                    f"RSI {last['rsi']:.1f} <= 64"
-                )
-            reason = " | ".join(
-                rejection_reasons
-            )
-            print(
-                f"    [SHORT FILTERED] "
-                f"{reason}"
-            )
+                rejection_reasons.append(f"RSI {last['rsi']:.1f} <= 64")
+            print(f"    [SHORT FILTERED] {' | '.join(rejection_reasons)}")
 
     # =========================================================
-    # FINAL SETUP RESULT
+    # FINAL RESULT
     # =========================================================
     if setups:
-        best_setup = max(
-            setups,
-            key=lambda x: x["score"]
-        )
-        print(
-            f"    → {len(setups)} setup(s) passed all filters | "
-            f"Best score: {best_setup['score']} | "
-            f"Side: {best_setup['side'].upper()} | "
-            f"RR: {best_setup['rr']:.2f}"
-        )
+        best_setup = max(setups, key=lambda x: x["score"])
+        print(f"    -> {len(setups)} setup(s) passed | Best score: {best_setup['score']} | "
+              f"Side: {best_setup['side'].upper()}")
     else:
-        print(
-            "    → No setup passed the quality filters"
-        )
-        
-    return sorted(
-        setups,
-        key=lambda x: x["score"],
-        reverse=True
-    )
+        print("    -> No setup passed the quality filters")
+
+    return sorted(setups, key=lambda x: x["score"], reverse=True)
