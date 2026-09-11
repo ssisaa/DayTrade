@@ -1,12 +1,11 @@
 # ============================================================
-# VeteranSR-Agent - Clean Main (Perpetual Version)
-# One position at a time + Safety focused
+# VeteranSR-Agent - Clean Main
+# Dynamic Pair Decision + One Position at a Time
 # ============================================================
 
 import time
 import traceback
 from datetime import datetime
-
 from config import *
 
 print("\n" + "="*70)
@@ -70,6 +69,13 @@ except Exception as e:
     raise
 
 try:
+    from core.pair_decision import decide_best_pairs
+    print("OK - pair_decision")
+except Exception as e:
+    print(f"FAILED pair_decision: {e}")
+    raise
+
+try:
     from utils.logger import logger
     print("OK - logger")
 except Exception as e:
@@ -96,17 +102,18 @@ print("="*70)
 print("ALL MODULES LOADED")
 print("="*70 + "\n")
 
+
 def run_agent():
     print("\n" + "="*70)
-    print("VETERAN SR-AGENT - PERPETUAL MODE")
+    print("VETERAN SR-AGENT - DYNAMIC PAIR VERSION")
     print(f"Mode             : {MODE}")
+    print(f"Trading Mode     : {TRADING_MODE}")
     print(f"Starting Equity  : ${STARTING_EQUITY}")
-    print(f"Pairs            : {PAIRS}")
     print(f"Max Positions    : {MAX_OPEN_POSITIONS}")
     print(f"Min Quality Score: {MIN_QUALITY_SCORE}")
     print("="*70 + "\n")
 
-    logger.info("Agent Started - Perpetual Version")
+    logger.info("Agent Started - Dynamic Pair Decision Version")
 
     # Initialize
     feed = DataFeed()
@@ -132,7 +139,7 @@ def run_agent():
             open_count = len(position_manager.open_trades)
             print(f"   Open positions: {open_count}")
 
-            # 2. ONE POSITION RULE - Most Important
+            # 2. ONE POSITION RULE
             if open_count >= MAX_OPEN_POSITIONS:
                 print("-> Position already open. Waiting for exit before new trades...")
                 time.sleep(LOOP_SLEEP_SECONDS)
@@ -146,12 +153,27 @@ def run_agent():
                 time.sleep(90)
                 continue
 
-            print("-> No open position + Risk OK. Scanning for new setups...")
+            # ============================================================
+            # 4. NO OPEN POSITION → FRESH PAIR DECISION
+            # ============================================================
+            print("-> No open position. Running fresh pair decision engine...")
 
-            # 4. Scan pairs
+            try:
+                selected_pairs = decide_best_pairs()
+            except Exception as e:
+                print(f"-> Pair decision error: {e}")
+                selected_pairs = []
+
+            if not selected_pairs:
+                print("-> No suitable pairs selected. Staying in cash this cycle.")
+                time.sleep(LOOP_SLEEP_SECONDS)
+                continue
+
+            print(f"-> Selected pairs for this cycle: {selected_pairs}")
+
             trade_placed = False
 
-            for pair in PAIRS:
+            for pair in selected_pairs:
                 if trade_placed:
                     break
 
@@ -166,7 +188,7 @@ def run_agent():
                     continue
 
                 if df_1h is None or df_daily is None:
-                    print(f"   No data for {pair}")
+                    print(f"   No data received for {pair}")
                     continue
 
                 print(f"   Data OK | 1h candles: {len(df_1h)}")
@@ -187,11 +209,11 @@ def run_agent():
                     continue
 
                 if not setups:
-                    print(f"   No valid setup")
+                    print(f"   No valid setup found on {pair}")
                     continue
 
                 best = setups[0]
-                print(f"   Setup found | Score: {best['score']} | Side: {best['side'].upper()}")
+                print(f"   Setup found | Score: {best['score']} | Side: {best['side'].upper()} | RR: {best.get('rr', 'N/A')}")
 
                 # Dynamic score check
                 try:
@@ -199,15 +221,15 @@ def run_agent():
                     if best["score"] < current_min:
                         print(f"   Rejected (Score {best['score']} < dynamic min {current_min})")
                         continue
-                except:
-                    pass
+                except Exception as e:
+                    print(f"   Dynamic score check error: {e}")
 
                 # Calculate size
                 try:
                     size = risk.calculate_adaptive_size(best["entry"], best["stop"], best["score"])
                     print(f"   Calculated size: ${size:.2f}")
                 except Exception as e:
-                    print(f"   Size error: {e}")
+                    print(f"   Size calculation error: {e}")
                     continue
 
                 if size < 5:
@@ -215,7 +237,7 @@ def run_agent():
                     continue
 
                 if not risk.can_open_trade():
-                    print("   Risk blocked the trade")
+                    print("   Risk engine blocked the trade")
                     continue
 
                 # Place the order
@@ -261,8 +283,8 @@ def run_agent():
                 pass
             time.sleep(60)
 
+
 if __name__ == "__main__":
     print(f"Trading Mode     : {TRADING_MODE}")
-    print(f"Pairs            : {PAIRS}")
     print(f"Default Type     : {DEFAULT_TYPE}")
     run_agent()
