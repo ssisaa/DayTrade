@@ -10,7 +10,7 @@ from utils.logger import logger
 from data.data_feed import DataFeed
 
 
-def get_24h_change(exchange, pair):
+def get_24h_change_old(exchange, pair):
     """Get 24h percentage change"""
     try:
         ticker = exchange.fetch_ticker(pair)
@@ -25,6 +25,66 @@ def get_24h_change(exchange, pair):
                 percentage = 0.0
 
         return float(percentage)
+    except Exception as e:
+        logger.warning(f"Could not get 24h change for {pair}: {e}")
+        return 0.0
+
+def get_24h_change_old1(exchange, pair):
+    """Get 24h percentage change (always returns true % , e.g. 3.0 for +3%)"""
+    try:
+        ticker = exchange.fetch_ticker(pair)
+        percentage = ticker.get("percentage")
+
+        if percentage is None:
+            last = ticker.get("last")
+            open_ = ticker.get("open")
+            if last and open_ and open_ != 0:
+                percentage = ((last - open_) / open_) * 100
+            else:
+                percentage = 0.0
+        else:
+            percentage = float(percentage)
+            # Crypto.com returns fraction (0.03 = 3%). Convert to true percent.
+            if abs(percentage) < 1.0:          # heuristic: values under 1 are almost certainly fractions
+                percentage *= 100
+
+        return float(percentage)
+    except Exception as e:
+        logger.warning(f"Could not get 24h change for {pair}: {e}")
+        return 0.0
+
+
+def get_24h_change(exchange, pair):
+    """
+    Get 24h percentage change.
+    Always returns true percentage (e.g. 3.0 means +3%).
+    Prefers calculating from last/open for maximum reliability,
+    especially important for Crypto.com which returns fraction values.
+    """
+    try:
+        ticker = exchange.fetch_ticker(pair)
+
+        last = ticker.get("last")
+        open_ = ticker.get("open")
+
+        # Prefer calculating ourselves – most reliable method
+        if last is not None and open_ is not None and open_ != 0:
+            percentage = ((last - open_) / open_) * 100
+            return float(percentage)
+
+        # Fallback to exchange-provided percentage
+        percentage = ticker.get("percentage")
+        if percentage is not None:
+            percentage = float(percentage)
+
+            # Crypto.com returns the value as a fraction (0.03 = +3%)
+            if exchange.id == "cryptocom":
+                percentage *= 100
+
+            return percentage
+
+        return 0.0
+
     except Exception as e:
         logger.warning(f"Could not get 24h change for {pair}: {e}")
         return 0.0
