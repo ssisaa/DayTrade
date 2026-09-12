@@ -59,3 +59,41 @@ class Execution:
         except Exception as e:
             logger.error(f"Order failed: {e}")
             return False
+
+def close_position(self, trade, exit_price=None):
+        """
+        Close an open position (PAPER or LIVE)
+        """
+        if MODE == "PAPER":
+            logger.info(f"[PAPER] Closing {trade['side'].upper()} {trade['pair']} | Reason handled by PositionManager")
+            return True
+
+        try:
+            symbol = trade["pair"]
+            # Opposite side to close the position
+            side = "sell" if trade["side"] == "buy" else "buy"
+
+            # Approximate quantity
+            amount = trade["remaining_size"] / trade["entry"]
+            if amount <= 0:
+                logger.error("Invalid amount for closing position")
+                return False
+
+            params = {}
+            if TRADING_MODE == "PERP":
+                params["reduceOnly"] = True
+
+            order = self.exchange.create_order(
+                symbol=symbol,
+                type="market",          # Market order is safer for closing
+                side=side,
+                amount=amount,
+                params=params
+            )
+
+            logger.info(f"[LIVE] Position CLOSED | {symbol} | Side: {side.upper()} | Order ID: {order.get('id')}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to close position: {e}")
+            return False
