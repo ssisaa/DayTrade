@@ -156,6 +156,19 @@ class PositionManager:
         if size <= 0:
             return
 
+        # ====================================================
+        # REAL PARTIAL CLOSE ORDER (CRITICAL FOR LIVE)
+        # ====================================================
+        # Create a temporary trade object with only the size we want to close
+        partial_trade = trade.copy()
+        partial_trade["remaining_size"] = size
+
+        success = self.execution.close_position(partial_trade, price)
+        if not success:
+            logger.error(f"Could not partially close position on exchange: {trade['id']}")
+            return  # Do not update equity if close failed
+        # ====================================================
+
         if trade["side"] == "buy":
             pnl_pct = (price - trade["entry"]) / trade["entry"]
         else:
@@ -169,9 +182,9 @@ class PositionManager:
 
         try:
             from core.performance import performance_tracker
-            partial_trade = trade.copy()
-            partial_trade["size"] = size
-            performance_tracker.record_trade(partial_trade, price, pnl_usdt, reason)
+            partial_record = trade.copy()
+            partial_record["size"] = size
+            performance_tracker.record_trade(partial_record, price, pnl_usdt, reason)
         except:
             pass
 
@@ -179,6 +192,15 @@ class PositionManager:
         size = trade["remaining_size"]
         if size <= 0:
             return
+
+        # ====================================================
+        # REAL CLOSE ORDER (CRITICAL FOR LIVE)
+        # ====================================================
+        success = self.execution.close_position(trade, exit_price)
+        if not success:
+            logger.error(f"Could not close position on exchange: {trade['id']}")
+            return  # Do not remove the trade if close failed
+        # ====================================================
 
         if trade["side"] == "buy":
             pnl_pct = (exit_price - trade["entry"]) / trade["entry"]
