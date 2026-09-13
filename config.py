@@ -8,7 +8,7 @@ API_SECRET = 'xxxxxxxxxxxxxxxxxxxxxx'
 
 
 # Starting capital simulation
-STARTING_EQUITY = 50.0
+STARTING_EQUITY = 50.0  # USDT
 
 # ====================== RISK MANAGEMENT ======================
 # Strong risk controls kept (only very mild relaxation)
@@ -46,7 +46,7 @@ HIGHER_TIMEFRAME = "1d"
 
 # ====================== STRATEGY PARAMETERS ======================
 # More trades while keeping quality
-MIN_QUALITY_SCORE = 78  # lowered from 72 → more setups
+MIN_QUALITY_SCORE = 72  # lowered from 72 → more setups 78- safer
 MIN_RR = 1.8  # lowered from 1.6 → more valid R:R opportunities
 ATR_PERIOD = 14
 RSI_PERIOD = 14
@@ -89,6 +89,6 @@ PARTIAL_TP2_R = 2.4
 
 # Dynamic Score (Win-rate based)
 RECENT_TRADES_WINDOW = 12
-MIN_WINRATE_TO_LOWER = 0.53  # slightly more forgiving
+MIN_WINRATE_TO_LOWER = 0.55  # slightly more forgiving
 LOW_WINRATE_THRESHOLD = 0.40
 DYNAMIC_SCORE_BOOST = 5  # milder boost than 6
