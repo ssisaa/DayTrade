@@ -1,7 +1,7 @@
 def classify_regime(df_daily, df_4h=None):
     """
-    Returns one of: STRONG_BULL, BULL, RANGE, BEAR, STRONG_BEAR, CHAOS
-    More balanced for both LONG and SHORT.
+    More responsive regime detection.
+    Combines Daily structure + recent momentum.
     """
     if df_daily is None or len(df_daily) < 55:
         return "UNKNOWN"
@@ -12,37 +12,47 @@ def classify_regime(df_daily, df_4h=None):
     atr = df_daily['atr'].iloc[-1]
     atr_ma = df_daily['atr'].rolling(40).mean().iloc[-1]
 
-    # Volatility ratio
+    # Recent momentum (last 3-5 daily candles)
+    change_3d = (price - df_daily['close'].iloc[-4]) / df_daily['close'].iloc[-4] * 100
+    change_5d = (price - df_daily['close'].iloc[-6]) / df_daily['close'].iloc[-6] * 100
+
     vol_ratio = atr / atr_ma if atr_ma > 0 else 1.0
 
-    # True chaos only when volatility is extremely high AND no clear trend
-    if vol_ratio > 2.3:
+    # Extreme volatility
+    if vol_ratio > 2.4:
         return "CHAOS"
 
     # Strong bullish structure
     if price > ema20 > ema50:
-        if (price - ema50) / ema50 > 0.045:
+        if (price - ema50) / ema50 > 0.045 and change_3d > -1.5:
             return "STRONG_BULL"
         return "BULL"
 
-    # Strong bearish structure (important for SHORT)
+    # Strong bearish structure
     elif price < ema20 < ema50:
         if (ema50 - price) / ema50 > 0.045:
             return "STRONG_BEAR"
         return "BEAR"
 
-    # Mild bullish / mild bearish / range
-    elif price > ema20 and price > ema50:
+    # === Fast reaction to recent heavy selling ===
+    if change_3d < -4.5 or change_5d < -7.0:
+        if price < ema20:
+            return "BEAR"
+        else:
+            return "RANGE"          # heavy drop but still above ema20
+
+    if change_3d > 4.5 or change_5d > 7.0:
+        if price > ema20:
+            return "BULL"
+        else:
+            return "RANGE"
+
+    # Default
+    if price > ema50:
         return "BULL"
-    elif price < ema20 and price < ema50:
+    elif price < ema50:
         return "BEAR"
     else:
-        # Elevated volatility but still directional → prefer BEAR/BULL over CHAOS
-        if vol_ratio > 1.8:
-            if price < ema50:
-                return "BEAR"
-            elif price > ema50:
-                return "BULL"
         return "RANGE"
 
 
