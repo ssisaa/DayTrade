@@ -5,8 +5,7 @@ MODE = "LIVE"
 # Crypto.com Exchange API (only needed for LIVE)
 API_KEY = 'xxxxxxxxxxxxxxxxxxxxxx'
 API_SECRET = 'xxxxxxxxxxxxxxxxxxxxxx'
-# API_KEY = 'htd1ZMNGVU79K3e3Usu2eh'
-# API_SECRET = 'PLNf7NrJNpRSaXyJEhXY2o'
+
 
 # Starting capital simulation
 STARTING_EQUITY = 50.0
