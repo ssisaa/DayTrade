@@ -57,57 +57,89 @@ class Execution:
             logger.error(f"Order failed: {e}")
             return False
 
+    def get_base_currency(self, symbol: str) -> str:
+        """Extract base currency from Spot or Perpetual symbol"""
+        symbol = symbol.upper()
+    
+        # Spot: BTC/USDT
+        if "/" in symbol:
+            return symbol.split("/")[0]
+    
+        # Perp: BTCUSD-PERP, ETHUSD-PERP, DOTUSD-PERP
+        if symbol.endswith("-PERP"):
+            symbol = symbol.replace("-PERP", "")
+            for quote in ["USDT", "USD", "USDC"]:
+                if symbol.endswith(quote):
+                    return symbol[: -len(quote)]
+    
+        return symbol[:3]  # fallback
+
+
     def close_position(self, trade, exit_price=None):
-    """
-    Close an open position (PAPER or LIVE)
-    Fixed for Spot balance issues
-    """
-    if MODE == "PAPER":
-        logger.info(f"[PAPER] Closing {trade['side'].upper()} {trade['pair']}")
-        return True
-
-    try:
-        symbol = trade["pair"]
-        side = "sell" if trade["side"] == "buy" else "buy"
-
-        # ---------- Get actual free balance of base currency ----------
-        base_currency = symbol.split('/')[0]   # e.g. DOT from DOT/USDT
-        balance = self.exchange.fetch_balance()
-
-        free_amount = 0.0
-        if base_currency in balance and balance[base_currency].get('free') is not None:
-            free_amount = float(balance[base_currency]['free'])
-
-        if free_amount <= 0:
-            logger.error(f"No free {base_currency} balance to close position")
+        """
+        Close an open position for both SPOT and PERP
+        """
+        if MODE == "PAPER":
+            logger.info(f"[PAPER] Closing {trade['side'].upper()} {trade['pair']}")
+            return True
+    
+        try:
+            symbol = trade["pair"]
+            side = "sell" if trade["side"] == "buy" else "buy"
+            params = {}
+    
+            # =========================
+            # SPOT CLOSE
+            # =========================
+            if TRADING_MODE == "SPOT":
+                base_currency = self.get_base_currency(symbol)
+                balance = self.exchange.fetch_balance()
+    
+                free_amount = 0.0
+                if base_currency in balance and balance[base_currency].get("free") is not None:
+                    free_amount = float(balance[base_currency]["free"])
+    
+                if free_amount <= 0:
+                    logger.error(f"No free {base_currency} balance to close position")
+                    return False
+    
+                # Leave a tiny buffer for rounding / fees
+                amount = free_amount * 0.995
+    
+                if amount <= 0:
+                    logger.error(f"Close amount too small: {amount}")
+                    return False
+    
+            # =========================
+            # PERP CLOSE
+            # =========================
+            else:
+                # For perpetuals, close using position size
+                amount = trade["remaining_size"] / trade["entry"]
+                if amount <= 0:
+                    logger.error(f"Invalid PERP close amount: {amount}")
+                    return False
+    
+                params["reduceOnly"] = True   # Very important for Perp
+    
+            # =========================
+            # SEND CLOSE ORDER
+            # =========================
+            order = self.exchange.create_order(
+                symbol=symbol,
+                type="market",
+                side=side,
+                amount=amount,
+                params=params
+            )
+    
+            logger.info(
+                f"[LIVE] Position CLOSED | {symbol} | {side.upper()} | "
+                f"Amount: {amount:.6f} | Mode: {TRADING_MODE} | "
+                f"Order ID: {order.get('id')}"
+            )
+            return True
+    
+        except Exception as e:
+            logger.error(f"Failed to close position: {e}")
             return False
-
-        # Use almost all free balance (leave tiny buffer for rounding)
-        amount = free_amount * 0.995
-
-        # Safety minimum
-        if amount <= 0:
-            logger.error(f"Calculated close amount too small: {amount}")
-            return False
-
-        params = {}
-        if TRADING_MODE == "PERP":
-            params["reduceOnly"] = True
-
-        order = self.exchange.create_order(
-            symbol=symbol,
-            type="market",
-            side=side,
-            amount=amount,
-            params=params
-        )
-
-        logger.info(
-            f"[LIVE] Position CLOSED | {symbol} | {side.upper()} | "
-            f"Amount: {amount:.6f} | Order ID: {order.get('id')}"
-        )
-        return True
-
-    except Exception as e:
-        logger.error(f"Failed to close position: {e}")
-        return False
